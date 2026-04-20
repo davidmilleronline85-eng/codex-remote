@@ -14,6 +14,12 @@ import (
 
 var tryCloudflareURLPattern = regexp.MustCompile(`https://[a-z0-9-]+\.trycloudflare\.com`)
 
+const (
+	publicReadyWarnAfter = 60 * time.Second
+	publicReadyInterval  = 2 * time.Second
+	publicReadyCheckTTL  = 5 * time.Second
+)
+
 type PublicAccessInfo struct {
 	HTTPSURL     string
 	WebSocketURL string
@@ -60,17 +66,11 @@ func RunQuickTunnel(ctx context.Context, configPath string, stdout, stderr io.Wr
 		}
 		publicWS := "wss://" + strings.TrimPrefix(match, "https://")
 		once.Do(func() {
-			fmt.Fprintf(stdout, "Quick tunnel ready\n")
+			fmt.Fprintf(stdout, "Quick tunnel URL allocated\n")
 			fmt.Fprintf(stdout, "Public HTTPS URL: %s\n", match)
 			fmt.Fprintf(stdout, "Public WebSocket URL: %s\n", publicWS)
-			fmt.Fprintf(stdout, "Bearer token: use `codex-remote token`\n")
-			fmt.Fprintf(stdout, "Press Ctrl-C to stop the tunnel.\n")
-			if onReady != nil {
-				onReady(PublicAccessInfo{
-					HTTPSURL:     match,
-					WebSocketURL: publicWS,
-				})
-			}
+			fmt.Fprintf(stdout, "Waiting for public reachability at %s/readyz\n", strings.TrimSuffix(match, "/"))
+			go waitForPublicTunnelReady(ctx, stdout, match, publicWS, onReady)
 		})
 	}
 
@@ -103,4 +103,47 @@ func RunQuickTunnel(ctx context.Context, configPath string, stdout, stderr io.Wr
 		return fmt.Errorf("cloudflared quick tunnel exited: %w", waitErr)
 	}
 	return nil
+}
+
+func waitForPublicTunnelReady(ctx context.Context, stdout io.Writer, publicHTTPS, publicWS string, onReady func(PublicAccessInfo)) {
+	readyzURL := strings.TrimSuffix(publicHTTPS, "/") + "/readyz"
+	ticker := time.NewTicker(publicReadyInterval)
+	defer ticker.Stop()
+
+	startedAt := time.Now()
+	warned := false
+	var lastDetail string
+	for {
+		checkCtx, cancel := context.WithTimeout(ctx, publicReadyCheckTTL)
+		ok, detail := checkHTTP(checkCtx, readyzURL, publicReadyCheckTTL)
+		cancel()
+		if ok {
+			fmt.Fprintf(stdout, "Quick tunnel ready\n")
+			fmt.Fprintf(stdout, "Public HTTPS URL: %s\n", publicHTTPS)
+			fmt.Fprintf(stdout, "Public WebSocket URL: %s\n", publicWS)
+			fmt.Fprintf(stdout, "Public readyz: %s\n", readyzURL)
+			fmt.Fprintf(stdout, "Keep this `codex-remote start` process running while remote agents use the server.\n")
+			fmt.Fprintf(stdout, "Press Ctrl-C to stop the tunnel.\n")
+			if onReady != nil {
+				onReady(PublicAccessInfo{
+					HTTPSURL:     publicHTTPS,
+					WebSocketURL: publicWS,
+				})
+			}
+			return
+		}
+		lastDetail = detail
+		if !warned && time.Since(startedAt) >= publicReadyWarnAfter {
+			fmt.Fprintf(stdout, "Quick tunnel is still not publicly reachable after %s (%s)\n", publicReadyWarnAfter, lastDetail)
+			fmt.Fprintf(stdout, "Cloudflare Quick Tunnels can return transient 530 errors until the edge can reach your local origin.\n")
+			fmt.Fprintf(stdout, "Keeping the process alive and continuing to wait for public reachability.\n")
+			warned = true
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }

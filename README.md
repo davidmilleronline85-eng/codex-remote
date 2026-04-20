@@ -54,6 +54,7 @@ That command:
 - creates local state if needed
 - starts `codex app-server`
 - creates a temporary public Cloudflare Quick Tunnel
+- waits until the public tunnel can reach `/readyz`
 - prints a copy-paste handoff block for remote agents
 - keeps running in the foreground
 
@@ -70,6 +71,7 @@ Copy this block into another agent:
 
 BEGIN_AGENT_HANDOFF
 You can interact with a remote Codex app-server over WebSocket.
+The original `codex-remote start` process must stay running while you use this endpoint.
 CODEX_REMOTE_URL=wss://something.trycloudflare.com
 CODEX_REMOTE_TOKEN=...
 AUTH_HEADER=Authorization: Bearer <CODEX_REMOTE_TOKEN>

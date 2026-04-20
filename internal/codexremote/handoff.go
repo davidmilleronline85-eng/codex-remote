@@ -14,6 +14,7 @@ func PrintAgentHandoff(w io.Writer, title, websocketURL, token string) {
 	fmt.Fprintln(w, "BEGIN_AGENT_HANDOFF")
 	fmt.Fprintln(w, "You can interact with a remote Codex app-server over WebSocket.")
 	fmt.Fprintln(w, "Use the values below exactly.")
+	fmt.Fprintln(w, "The original `codex-remote start` process must stay running while you use this endpoint.")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "CODEX_REMOTE_URL="+websocketURL)
 	fmt.Fprintln(w, "CODEX_REMOTE_TOKEN="+token)
