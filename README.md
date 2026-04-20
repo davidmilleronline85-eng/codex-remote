@@ -55,7 +55,7 @@ That command:
 - creates local state if needed
 - starts `codex app-server`
 - creates a temporary public Cloudflare Quick Tunnel
-- waits until the public tunnel can reach `/readyz`
+- waits until public DNS propagation and `/readyz` are both ready
 - prints a copy-paste handoff block for remote agents
 - keeps running in the foreground
 
@@ -74,7 +74,7 @@ That command:
 - maps `POST /v1/threads` to `codex exec`
 - maps `POST /v1/threads/{thread_id}/turns` to `codex exec resume`
 - creates a temporary public Cloudflare Quick Tunnel
-- waits until the public tunnel can reach `/readyz`
+- waits until public DNS propagation and `/readyz` are both ready
 - prints a copy-paste HTTP handoff block for remote agents
 - keeps running in the foreground
 

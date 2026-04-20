@@ -3,6 +3,7 @@ package codexremote
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -73,5 +74,27 @@ func TestCheckHTTPViaPublicDNSDirectDial(t *testing.T) {
 	}
 	if !strings.Contains(detail, "200 OK") {
 		t.Fatalf("expected 200 OK detail, got %q", detail)
+	}
+}
+
+func TestResolveHostViaDNSProvider(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(dnsResponse{
+			Status: 0,
+			Answer: []dnsAnswer{{Type: 1, Data: "104.16.230.132"}},
+		})
+	}))
+	defer server.Close()
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	ips, err := resolveHostViaDNSProvider(context.Background(), client, "example.trycloudflare.com", publicDNSProvider{
+		name:     "test",
+		endpoint: server.URL + "?name=%s&type=A",
+	})
+	if err != nil {
+		t.Fatalf("resolveHostViaDNSProvider returned error: %v", err)
+	}
+	if len(ips) != 1 || ips[0] != "104.16.230.132" {
+		t.Fatalf("unexpected IPs: %#v", ips)
 	}
 }

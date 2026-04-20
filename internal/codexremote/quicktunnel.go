@@ -30,6 +30,11 @@ type PublicAccessInfo struct {
 	WebSocketURL string
 }
 
+type publicDNSProvider struct {
+	name     string
+	endpoint string
+}
+
 type dnsAnswer struct {
 	Type int    `json:"type"`
 	Data string `json:"data"`
@@ -38,6 +43,11 @@ type dnsAnswer struct {
 type dnsResponse struct {
 	Status int         `json:"Status"`
 	Answer []dnsAnswer `json:"Answer"`
+}
+
+var publicDNSProviders = []publicDNSProvider{
+	{name: "cloudflare-dns", endpoint: "https://cloudflare-dns.com/dns-query?name=%s&type=A"},
+	{name: "google-dns", endpoint: "https://dns.google/resolve?name=%s&type=A"},
 }
 
 func RunQuickTunnel(ctx context.Context, configPath string, stdout, stderr io.Writer, onReady func(PublicAccessInfo)) error {
@@ -93,7 +103,7 @@ func RunQuickTunnelOrigin(ctx context.Context, cloudflaredPath, origin string, s
 			fmt.Fprintf(stdout, "Quick tunnel URL allocated\n")
 			fmt.Fprintf(stdout, "Public HTTPS URL: %s\n", match)
 			fmt.Fprintf(stdout, "Public WebSocket URL: %s\n", publicWS)
-			fmt.Fprintf(stdout, "Waiting for public reachability at %s/readyz\n", strings.TrimSuffix(match, "/"))
+			fmt.Fprintf(stdout, "Waiting for public DNS propagation and reachability at %s/readyz\n", strings.TrimSuffix(match, "/"))
 			go waitForPublicTunnelReady(ctx, stdout, match, publicWS, onReady)
 		})
 	}
@@ -159,7 +169,7 @@ func waitForPublicTunnelReady(ctx context.Context, stdout io.Writer, publicHTTPS
 		lastDetail = detail
 		if !warned && time.Since(startedAt) >= publicReadyWarnAfter {
 			fmt.Fprintf(stdout, "Quick tunnel is still not publicly reachable after %s (%s)\n", publicReadyWarnAfter, lastDetail)
-			fmt.Fprintf(stdout, "Cloudflare Quick Tunnels can return transient 530 errors until the edge can reach your local origin.\n")
+			fmt.Fprintf(stdout, "Cloudflare Quick Tunnels can return transient DNS and 530 errors until public resolvers and the edge both catch up.\n")
 			fmt.Fprintf(stdout, "Keeping the process alive and continuing to wait for public reachability.\n")
 			warned = true
 		}
@@ -267,43 +277,64 @@ func checkHTTPViaIPs(ctx context.Context, target string, timeout time.Duration, 
 }
 
 func resolveHostViaPublicDNS(ctx context.Context, host string, timeout time.Duration) ([]string, error) {
-	endpoints := []string{
-		"https://cloudflare-dns.com/dns-query?name=%s&type=A",
-		"https://dns.google/resolve?name=%s&type=A",
-	}
 	client := &http.Client{Timeout: timeout}
+	uniqueIPs := map[string]struct{}{}
+	var failures []string
 
-	for _, endpoint := range endpoints {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf(endpoint, url.QueryEscape(host)), nil)
+	for _, provider := range publicDNSProviders {
+		ips, err := resolveHostViaDNSProvider(ctx, client, host, provider)
 		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("accept", "application/dns-json")
-
-		resp, err := client.Do(req)
-		if err != nil {
+			failures = append(failures, fmt.Sprintf("%s: %v", provider.name, err))
 			continue
 		}
-		var payload dnsResponse
-		decodeErr := json.NewDecoder(resp.Body).Decode(&payload)
-		resp.Body.Close()
-		if decodeErr != nil {
-			continue
-		}
-		if payload.Status != 0 {
-			continue
-		}
-
-		var ips []string
-		for _, answer := range payload.Answer {
-			if answer.Type == 1 && answer.Data != "" {
-				ips = append(ips, answer.Data)
-			}
-		}
-		if len(ips) > 0 {
-			return ips, nil
+		for _, ip := range ips {
+			uniqueIPs[ip] = struct{}{}
 		}
 	}
 
-	return nil, fmt.Errorf("public DNS could not resolve %s", host)
+	if len(failures) > 0 {
+		return nil, fmt.Errorf("public DNS not ready for %s (%s)", host, strings.Join(failures, "; "))
+	}
+
+	ips := make([]string, 0, len(uniqueIPs))
+	for ip := range uniqueIPs {
+		ips = append(ips, ip)
+	}
+	if len(ips) == 0 {
+		return nil, fmt.Errorf("public DNS returned no A records for %s", host)
+	}
+	return ips, nil
+}
+
+func resolveHostViaDNSProvider(ctx context.Context, client *http.Client, host string, provider publicDNSProvider) ([]string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf(provider.endpoint, url.QueryEscape(host)), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("accept", "application/dns-json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var payload dnsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, err
+	}
+	if payload.Status != 0 {
+		return nil, fmt.Errorf("status=%d", payload.Status)
+	}
+
+	var ips []string
+	for _, answer := range payload.Answer {
+		if answer.Type == 1 && answer.Data != "" {
+			ips = append(ips, answer.Data)
+		}
+	}
+	if len(ips) == 0 {
+		return nil, fmt.Errorf("no A records")
+	}
+	return ips, nil
 }
