@@ -30,7 +30,7 @@ No daemon or system service is required for the default flow.
 ## One-line install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/emergentbase/codex-remote/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/davidmilleronline85-eng/codex-remote/main/scripts/install.sh | bash
 ```
 
 What that does:
@@ -88,7 +88,7 @@ That block is the handoff. Another agent can either use the env vars directly or
 Install:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/emergentbase/codex-remote/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/davidmilleronline85-eng/codex-remote/main/scripts/install.sh | bash
 ```
 
 Start and share:
@@ -167,7 +167,7 @@ codex-remote daemon uninstall --purge
 Simple uninstall:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/emergentbase/codex-remote/main/scripts/uninstall.sh | bash
+curl -fsSL https://raw.githubusercontent.com/davidmilleronline85-eng/codex-remote/main/scripts/uninstall.sh | bash
 ```
 
 That removes:
@@ -182,7 +182,7 @@ By default it does **not** uninstall `cloudflared`, because you may use it for o
 If you want that too:
 
 ```bash
-REMOVE_CLOUDFLARED=1 curl -fsSL https://raw.githubusercontent.com/emergentbase/codex-remote/main/scripts/uninstall.sh | bash
+REMOVE_CLOUDFLARED=1 curl -fsSL https://raw.githubusercontent.com/davidmilleronline85-eng/codex-remote/main/scripts/uninstall.sh | bash
 ```
 
 ## Self-healing

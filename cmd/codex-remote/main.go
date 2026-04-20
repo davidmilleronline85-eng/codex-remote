@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/emergentbase/codex-remote/internal/codexremote"
+	"github.com/davidmilleronline85-eng/codex-remote/internal/codexremote"
 
 	"github.com/spf13/cobra"
 )

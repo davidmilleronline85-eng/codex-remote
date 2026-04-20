@@ -1,4 +1,4 @@
-module github.com/emergentbase/codex-remote
+module github.com/davidmilleronline85-eng/codex-remote
 
 go 1.24.2
 

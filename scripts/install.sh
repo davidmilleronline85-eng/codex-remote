@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="${REPO:-emergentbase/codex-remote}"
+REPO="${REPO:-davidmilleronline85-eng/codex-remote}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 VERSION="${VERSION:-latest}"
 CLOUDFLARED_REPO="${CLOUDFLARED_REPO:-cloudflare/cloudflared}"
