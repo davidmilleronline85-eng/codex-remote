@@ -1,0 +1,20 @@
+version: 2
+
+project_name: codex-remote
+
+builds:
+  - binary: codex-remote
+    main: ./cmd/codex-remote
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
