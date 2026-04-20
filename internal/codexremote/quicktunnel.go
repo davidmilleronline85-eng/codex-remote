@@ -3,8 +3,13 @@ package codexremote
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
+	"net/url"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -23,6 +28,16 @@ const (
 type PublicAccessInfo struct {
 	HTTPSURL     string
 	WebSocketURL string
+}
+
+type dnsAnswer struct {
+	Type int    `json:"type"`
+	Data string `json:"data"`
+}
+
+type dnsResponse struct {
+	Status int         `json:"Status"`
+	Answer []dnsAnswer `json:"Answer"`
 }
 
 func RunQuickTunnel(ctx context.Context, configPath string, stdout, stderr io.Writer, onReady func(PublicAccessInfo)) error {
@@ -115,7 +130,7 @@ func waitForPublicTunnelReady(ctx context.Context, stdout io.Writer, publicHTTPS
 	var lastDetail string
 	for {
 		checkCtx, cancel := context.WithTimeout(ctx, publicReadyCheckTTL)
-		ok, detail := checkHTTP(checkCtx, readyzURL, publicReadyCheckTTL)
+		ok, detail := checkTunnelReady(checkCtx, readyzURL, publicReadyCheckTTL)
 		cancel()
 		if ok {
 			fmt.Fprintf(stdout, "Quick tunnel ready\n")
@@ -146,4 +161,140 @@ func waitForPublicTunnelReady(ctx context.Context, stdout io.Writer, publicHTTPS
 		case <-ticker.C:
 		}
 	}
+}
+
+func checkTunnelReady(ctx context.Context, target string, timeout time.Duration) (bool, string) {
+	ok, detail := checkHTTP(ctx, target, timeout)
+	if ok {
+		return true, detail
+	}
+
+	ok, fallbackDetail := checkHTTPViaPublicDNS(ctx, target, timeout)
+	if ok {
+		return true, fallbackDetail
+	}
+	if fallbackDetail != "" {
+		return false, fallbackDetail
+	}
+	return false, detail
+}
+
+func checkHTTPViaPublicDNS(ctx context.Context, target string, timeout time.Duration) (bool, string) {
+	parsed, err := url.Parse(target)
+	if err != nil {
+		return false, err.Error()
+	}
+	host := parsed.Hostname()
+	if host == "" {
+		return false, "missing hostname"
+	}
+
+	ips, err := resolveHostViaPublicDNS(ctx, host, timeout)
+	if err != nil {
+		return false, err.Error()
+	}
+	if len(ips) == 0 {
+		return false, fmt.Sprintf("public DNS returned no A records for %s", host)
+	}
+
+	return checkHTTPViaIPs(ctx, target, timeout, ips)
+}
+
+func checkHTTPViaIPs(ctx context.Context, target string, timeout time.Duration, ips []string) (bool, string) {
+	parsed, err := url.Parse(target)
+	if err != nil {
+		return false, err.Error()
+	}
+	host := parsed.Hostname()
+	if host == "" {
+		return false, "missing hostname"
+	}
+	port := parsed.Port()
+	switch {
+	case port != "":
+	case parsed.Scheme == "https":
+		port = "443"
+	default:
+		port = "80"
+	}
+
+	dialer := &net.Dialer{Timeout: timeout}
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{ServerName: host},
+		DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			var lastErr error
+			for _, ip := range ips {
+				conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(ip, port))
+				if err == nil {
+					return conn, nil
+				}
+				lastErr = err
+			}
+			if lastErr == nil {
+				lastErr = fmt.Errorf("no reachable IPs for %s", host)
+			}
+			return nil, lastErr
+		},
+	}
+	defer transport.CloseIdleConnections()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	if err != nil {
+		return false, err.Error()
+	}
+	client := &http.Client{
+		Timeout:   timeout,
+		Transport: transport,
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false, err.Error()
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Sprintf("%s via direct IP", resp.Status)
+	}
+	return true, fmt.Sprintf("%s via direct IP", resp.Status)
+}
+
+func resolveHostViaPublicDNS(ctx context.Context, host string, timeout time.Duration) ([]string, error) {
+	endpoints := []string{
+		"https://cloudflare-dns.com/dns-query?name=%s&type=A",
+		"https://dns.google/resolve?name=%s&type=A",
+	}
+	client := &http.Client{Timeout: timeout}
+
+	for _, endpoint := range endpoints {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf(endpoint, url.QueryEscape(host)), nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("accept", "application/dns-json")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			continue
+		}
+		var payload dnsResponse
+		decodeErr := json.NewDecoder(resp.Body).Decode(&payload)
+		resp.Body.Close()
+		if decodeErr != nil {
+			continue
+		}
+		if payload.Status != 0 {
+			continue
+		}
+
+		var ips []string
+		for _, answer := range payload.Answer {
+			if answer.Type == 1 && answer.Data != "" {
+				ips = append(ips, answer.Data)
+			}
+		}
+		if len(ips) > 0 {
+			return ips, nil
+		}
+	}
+
+	return nil, fmt.Errorf("public DNS could not resolve %s", host)
 }
