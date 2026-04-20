@@ -13,7 +13,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const version = "0.1.0"
+const version = "0.2.0"
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
@@ -34,6 +34,7 @@ func main() {
 
 	rootCmd.AddCommand(
 		cmdStart(&configPath),
+		cmdServeHTTP(&configPath),
 		cmdStatus(&configPath),
 		cmdToken(&configPath),
 		cmdExpose(&configPath),
@@ -66,6 +67,28 @@ func cmdStart(configPath *string) *cobra.Command {
 	cmd.Flags().StringVar(&opts.ListenURL, "listen-url", "", "listen URL for codex app-server, e.g. ws://127.0.0.1:8765")
 	cmd.Flags().BoolVar(&opts.Force, "force", false, "overwrite an existing config")
 	cmd.Flags().DurationVar(&opts.WaitTimeout, "wait-timeout", 20*time.Second, "how long to wait for readyz after install")
+	cmd.Flags().BoolVar(&opts.Public, "public", true, "create a public Cloudflare Quick Tunnel and print a shareable URL")
+	cmd.Flags().BoolVar(&opts.Public, "tunnel", true, "alias for --public")
+	return cmd
+}
+
+func cmdServeHTTP(configPath *string) *cobra.Command {
+	var opts codexremote.HTTPServeOptions
+
+	cmd := &cobra.Command{
+		Use:   "serve-http",
+		Short: "Start a plain HTTP API over codex exec/exec resume and print an agent-ready handoff block",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			opts.ConfigPath = *configPath
+			return codexremote.StartHTTPForeground(cmd.Context(), opts, os.Stdout, os.Stderr)
+		},
+	}
+
+	cmd.Flags().StringVar(&opts.StateDir, "state-dir", "", "state directory for config, logs, and token")
+	cmd.Flags().StringVar(&opts.CodexPath, "codex-path", "", "path to the codex executable")
+	cmd.Flags().StringVar(&opts.ListenURL, "listen-url", codexremote.DefaultHTTPListenURL, "listen URL for the HTTP API, e.g. http://127.0.0.1:8787")
+	cmd.Flags().BoolVar(&opts.Force, "force", false, "overwrite an existing config")
+	cmd.Flags().DurationVar(&opts.WaitTimeout, "wait-timeout", 20*time.Second, "how long to wait for /readyz after start")
 	cmd.Flags().BoolVar(&opts.Public, "public", true, "create a public Cloudflare Quick Tunnel and print a shareable URL")
 	cmd.Flags().BoolVar(&opts.Public, "tunnel", true, "alias for --public")
 	return cmd

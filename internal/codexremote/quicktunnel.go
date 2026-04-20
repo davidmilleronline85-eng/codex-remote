@@ -59,7 +59,16 @@ func RunQuickTunnel(ctx context.Context, configPath string, stdout, stderr io.Wr
 		return err
 	}
 
-	cmd := exec.CommandContext(ctx, cloudflaredPath, "tunnel", "--url", origin)
+	return RunQuickTunnelOrigin(ctx, cloudflaredPath, origin, stdout, stderr, onReady)
+}
+
+func RunQuickTunnelOrigin(ctx context.Context, cloudflaredPath, origin string, stdout, stderr io.Writer, onReady func(PublicAccessInfo)) error {
+	resolvedCloudflared, err := resolveExecutable(cloudflaredPath)
+	if err != nil {
+		return fmt.Errorf("cloudflared is required for quick exposure; rerun the installer or put `cloudflared` on PATH: %w", err)
+	}
+
+	cmd := exec.CommandContext(ctx, resolvedCloudflared, "tunnel", "--url", origin)
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("cloudflared stdout pipe: %w", err)
@@ -137,7 +146,7 @@ func waitForPublicTunnelReady(ctx context.Context, stdout io.Writer, publicHTTPS
 			fmt.Fprintf(stdout, "Public HTTPS URL: %s\n", publicHTTPS)
 			fmt.Fprintf(stdout, "Public WebSocket URL: %s\n", publicWS)
 			fmt.Fprintf(stdout, "Public readyz: %s\n", readyzURL)
-			fmt.Fprintf(stdout, "Keep this `codex-remote start` process running while remote agents use the server.\n")
+			fmt.Fprintf(stdout, "Keep the original `codex-remote` process running while remote agents use the server.\n")
 			fmt.Fprintf(stdout, "Press Ctrl-C to stop the tunnel.\n")
 			if onReady != nil {
 				onReady(PublicAccessInfo{

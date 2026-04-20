@@ -42,7 +42,7 @@ func TestWaitForPublicTunnelReady(t *testing.T) {
 	if !strings.Contains(out, "Quick tunnel ready") {
 		t.Fatalf("expected ready message in output, got %q", out)
 	}
-	if !strings.Contains(out, "Keep this `codex-remote start` process running") {
+	if !strings.Contains(out, "Keep the original `codex-remote` process running") {
 		t.Fatalf("expected keep-running message in output, got %q", out)
 	}
 }

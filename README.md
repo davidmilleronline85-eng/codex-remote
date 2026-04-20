@@ -13,11 +13,12 @@ No daemon or system service is required for the default flow.
 ## What it does
 
 - starts `codex app-server` for you
+- or serves a simple authenticated HTTP API over `codex exec` / `codex exec resume`
 - optionally exposes it through a Cloudflare Quick Tunnel
 - prints a ready-to-share handoff block with:
-  - public WebSocket URL
+  - public WebSocket URL or public HTTP base URL
   - bearer token
-  - minimal Python client snippet
+  - minimal client snippet
 - supervises the local `codex app-server` while running
 - offers optional macOS `launchd` daemon commands later if you want them
 
@@ -60,6 +61,25 @@ That command:
 
 Stop it with `Ctrl-C`.
 
+## One-line HTTP start
+
+```bash
+codex-remote serve-http
+```
+
+That command:
+
+- creates local state if needed
+- starts a local authenticated HTTP API
+- maps `POST /v1/threads` to `codex exec`
+- maps `POST /v1/threads/{thread_id}/turns` to `codex exec resume`
+- creates a temporary public Cloudflare Quick Tunnel
+- waits until the public tunnel can reach `/readyz`
+- prints a copy-paste HTTP handoff block for remote agents
+- keeps running in the foreground
+
+Stop it with `Ctrl-C`.
+
 ## What you’ll see
 
 `codex-remote start` prints a block like:
@@ -85,6 +105,13 @@ END_AGENT_HANDOFF
 
 That block is the handoff. Another agent can either use the env vars directly or run the included Python snippet as-is.
 
+`codex-remote serve-http` prints a similar `BEGIN_HTTP_AGENT_HANDOFF ... END_HTTP_AGENT_HANDOFF` block with:
+
+- `CODEX_REMOTE_HTTP_URL`
+- `CODEX_REMOTE_TOKEN`
+- `POST /v1/threads`
+- `POST /v1/threads/{thread_id}/turns`
+
 ## Minimal usage
 
 Install:
@@ -97,6 +124,12 @@ Start and share:
 
 ```bash
 codex-remote start
+```
+
+Or use the plain HTTP wrapper:
+
+```bash
+codex-remote serve-http
 ```
 
 Local-only start without a public tunnel:
@@ -142,6 +175,26 @@ async def main():
 asyncio.run(main())
 ```
 
+## HTTP example for remote agents
+
+Create a thread:
+
+```bash
+curl -sS "$CODEX_REMOTE_HTTP_URL/v1/threads" \
+  -H "Authorization: Bearer $CODEX_REMOTE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"prompt":"Reply with exactly: OK","cwd":"/path/to/repo"}'
+```
+
+Resume a thread:
+
+```bash
+curl -sS "$CODEX_REMOTE_HTTP_URL/v1/threads/<thread_id>/turns" \
+  -H "Authorization: Bearer $CODEX_REMOTE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"prompt":"Continue from there"}'
+```
+
 ## Commands
 
 Foreground flow:
@@ -149,6 +202,8 @@ Foreground flow:
 ```bash
 codex-remote start
 codex-remote start --public=false
+codex-remote serve-http
+codex-remote serve-http --public=false
 codex-remote status
 codex-remote token
 codex-remote expose quick

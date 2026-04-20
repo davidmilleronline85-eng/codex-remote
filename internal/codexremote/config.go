@@ -465,8 +465,10 @@ func DeriveHTTPURL(listenURL, path string) (string, error) {
 		parsed.Scheme = "http"
 	case "wss":
 		parsed.Scheme = "https"
+	case "http", "https":
+		// keep the scheme as-is for native HTTP listeners
 	default:
-		return "", fmt.Errorf("listen url must use ws or wss, got %q", parsed.Scheme)
+		return "", fmt.Errorf("listen url must use ws, wss, http, or https, got %q", parsed.Scheme)
 	}
 	parsed.Path = path
 	parsed.RawQuery = ""

@@ -17,6 +17,18 @@ func TestDeriveHTTPURL(t *testing.T) {
 	}
 }
 
+func TestDeriveHTTPURLPreservesHTTPScheme(t *testing.T) {
+	t.Parallel()
+
+	got, err := DeriveHTTPURL("http://127.0.0.1:8787", "/readyz")
+	if err != nil {
+		t.Fatalf("DeriveHTTPURL returned error: %v", err)
+	}
+	if got != "http://127.0.0.1:8787/readyz" {
+		t.Fatalf("unexpected derived url: %s", got)
+	}
+}
+
 func TestRenderLaunchdPlist(t *testing.T) {
 	t.Parallel()
 
